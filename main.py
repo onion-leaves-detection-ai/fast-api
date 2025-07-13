@@ -36,48 +36,58 @@ labels = model.names
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
 @app.post("/detect")
 async def detect_image(file: UploadFile = File(...)):
     file_path = os.path.join(UPLOAD_DIR, file.filename)
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    
+    try:
+        # Save uploaded image
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
 
-    results = model(file_path)
-    detections = results[0].boxes
-    output = []
-    boxes = []
+        # Run model prediction
+        results = model(file_path)
+        detections = results[0].boxes
+        output = []
+        boxes = []
 
-    for det in detections:
-        class_id = int(det.cls.item())
-        label = labels[class_id]
-        confidence = float(det.conf.item())
+        for det in detections:
+            class_id = int(det.cls.item())
+            label = labels[class_id]
+            confidence = float(det.conf.item())
+            box_xyxy = det.xyxy[0].tolist()
 
-        # Accurate box from det.xyxy (absolute pixel coordinates)
-        box_xyxy = det.xyxy[0].tolist()  # [x1, y1, x2, y2]
+            output.append({
+                "label": label,
+                "confidence": round(confidence, 3)
+            })
+            boxes.append({
+                "box": box_xyxy,
+                "label": label,
+                "confidence": round(confidence, 3)
+            })
 
-        output.append({
-            "label": label,
-            "confidence": round(confidence, 3)
-        })
+        # Send to Pusher
+        pusher_client.trigger(
+            'detection-channel',
+            'new-detection',
+            {
+                "filename": file.filename,
+                "results": output[0] if output else {},
+                "boxes": boxes
+            }
+        )
 
-        boxes.append({
-            "box": box_xyxy,
-            "label": label,
-            "confidence": round(confidence, 3)
-        })
-
-    # 🔔 Send via Pusher to frontend
-    pusher_client.trigger(
-        'detection-channel',
-        'new-detection',
-        {
+        return {
             "filename": file.filename,
-            "results": output[0] if output else {},
-            "boxes": boxes
+            "results": output
         }
-    )
 
-    return {
-        "filename": file.filename,
-        "results": output
-    }
+    finally:
+        # Ensure file gets deleted even if an error occurs
+        if os.path.exists(file_path):
+            os.remove(file_path)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=10000)

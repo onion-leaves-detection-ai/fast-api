@@ -29,9 +29,9 @@
 |-- README.dataset.txt
 |-- README.md
 |-- README.roboflow.txt
+|-- render.yaml
 |-- requirements.txt
 |-- uploads
-    |-- frame.jpg
 |-- __pycache__
     |-- custom_blocks.cpython-310.pyc
     |-- main.cpython-310.pyc
