@@ -1,0 +1,38 @@
+|-- .gitignore
+|-- LICENSE
+|-- main.py
+|-- my_model
+    |-- my_model.pt
+    |-- train
+        |-- args.yaml
+        |-- BoxF1_curve.png
+        |-- BoxPR_curve.png
+        |-- BoxP_curve.png
+        |-- BoxR_curve.png
+        |-- confusion_matrix.png
+        |-- confusion_matrix_normalized.png
+        |-- labels.jpg
+        |-- labels_correlogram.jpg
+        |-- results.csv
+        |-- results.png
+        |-- train_batch0.jpg
+        |-- train_batch1.jpg
+        |-- train_batch2.jpg
+        |-- train_batch540.jpg
+        |-- train_batch541.jpg
+        |-- train_batch542.jpg
+        |-- val_batch0_labels.jpg
+        |-- val_batch0_pred.jpg
+        |-- weights
+            |-- best.pt
+            |-- last.pt
+|-- README.dataset.txt
+|-- README.md
+|-- README.roboflow.txt
+|-- requirements.txt
+|-- uploads
+    |-- frame.jpg
+|-- __pycache__
+    |-- custom_blocks.cpython-310.pyc
+    |-- main.cpython-310.pyc
+    |-- main.cpython-312.pyc
