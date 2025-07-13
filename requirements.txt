@@ -2,8 +2,7 @@ fastapi==0.116.1
 uvicorn==0.35.0
 python-multipart==0.0.20
 numpy==1.24.4
-torch==2.1.0+cpu
-torchvision==0.16.0+cpu
+torch==2.0.1+cpu
+torchvision==0.15.2+cpu
 ultralytics==8.1.25
 pusher==3.3.3
-opencv-python==4.12.0.88
