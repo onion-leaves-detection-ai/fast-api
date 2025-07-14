@@ -1,4 +1,5 @@
 |-- .gitignore
+|-- Dockerfile
 |-- LICENSE
 |-- main.py
 |-- my_model
