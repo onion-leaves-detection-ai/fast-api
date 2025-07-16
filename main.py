@@ -4,12 +4,9 @@ from ultralytics import YOLO
 import shutil
 import os
 import pusher
-
 from typing import List
-# Fix for PyTorch 2.6+: allow model class for loading
+
 import torch
-from ultralytics.nn.tasks import DetectionModel
-torch.serialization.add_safe_globals({'ultralytics.nn.tasks.DetectionModel': DetectionModel})
 
 app = FastAPI()
 
@@ -29,65 +26,72 @@ pusher_client = pusher.Pusher(
     cluster='ap1',
     ssl=False
 )
-# Load model
-MODEL_PATH = "my_model/my_model.pt"
+
+MODEL_PATH = "my_model/my_model.torchscript"
 model = YOLO(MODEL_PATH)
 labels = model.names
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
 @app.post("/detect")
 async def detect_image(file: UploadFile = File(...)):
     file_path = os.path.join(UPLOAD_DIR, file.filename)
-    
     try:
-        # Save uploaded image
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        # Run model prediction
         results = model(file_path)
         detections = results[0].boxes
-        output = []
-        boxes = []
+        labels = model.names
+
+        found = []
+        grouped = {}
+        box_map = {}
 
         for det in detections:
-            class_id = int(det.cls.item())
-            label = labels[class_id]
-            confidence = float(det.conf.item())
-            box_xyxy = det.xyxy[0].tolist()
+            label = labels[int(det.cls.item())]
+            conf = float(det.conf.item())
+            box = det.xyxy[0].tolist()
 
-            output.append({
+            found.append({
                 "label": label,
-                "confidence": round(confidence, 3)
-            })
-            boxes.append({
-                "box": box_xyxy,
-                "label": label,
-                "confidence": round(confidence, 3)
+                "confidence": round(conf, 3)
             })
 
-        # Send to Pusher
+            if label not in grouped:
+                grouped[label] = []
+                box_map[label] = box
+            grouped[label].append(conf)
+
+        final_label = "No detection"
+        final_conf = 0
+        final_box = []
+
+        for label, scores in grouped.items():
+            avg = sum(scores) / len(scores)
+            if avg > final_conf:
+                final_label = label
+                final_conf = avg
+                final_box = box_map[label]
+
         pusher_client.trigger(
             'detection-channel',
             'new-detection',
             {
                 "filename": file.filename,
-                "results": output[0] if output else {},
-                "boxes": boxes
+                "results": final_label,
+                "box": final_box,
+                "found": found
             }
         )
 
         return {
             "filename": file.filename,
-            "results": output
+            "results": final_label,
+            "box": final_box,
+            "found": found
         }
 
     finally:
-        # Ensure file gets deleted even if an error occurs
         if os.path.exists(file_path):
             os.remove(file_path)
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=10000)

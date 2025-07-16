@@ -1,9 +1,11 @@
 |-- .gitignore
+|-- add_safe_globals.py
 |-- Dockerfile
 |-- LICENSE
 |-- main.py
 |-- my_model
     |-- my_model.pt
+    |-- my_model.torchscript
     |-- train
         |-- args.yaml
         |-- BoxF1_curve.png
@@ -33,7 +35,9 @@
 |-- render.yaml
 |-- requirements.txt
 |-- runtime.txt
+|-- source
 |-- uploads
+|-- venv.bat
 |-- __pycache__
     |-- custom_blocks.cpython-310.pyc
     |-- main.cpython-310.pyc
