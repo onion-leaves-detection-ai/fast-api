@@ -7,7 +7,6 @@ import pusher
 
 app = FastAPI()
 
-# CORS for any frontend client (localhost, LAN, etc.)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,7 +15,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Pusher configuration
+# Setup Pusher
 pusher_client = pusher.Pusher(
     app_id='2021947',
     key='e019d7e7760033b03392',
@@ -25,12 +24,18 @@ pusher_client = pusher.Pusher(
     ssl=False
 )
 
-# Load TorchScript model
+# Load model
 MODEL_PATH = "my_model/my_model.torchscript"
 model = YOLO(MODEL_PATH)
-labels = model.names
 
-# Ensure uploads folder exists
+# ✅ Manually define label map (replace with your actual class labels)
+labels = {
+    0: "Anthracnose Twister",
+    1: "Bacterial Blight",
+    2: "Healthy Leaf",
+    # Add more if your model has more classes
+}
+
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -50,17 +55,15 @@ async def detect_image(file: UploadFile = File(...)):
         box_map = {}
 
         for det in detections:
-            if det.cls is None:
-                continue  # Skip if no class detected
+            if det.cls is None or det.conf is None:
+                continue  # skip if incomplete
 
-            label = labels[int(det.cls.item())]
+            cls_id = int(det.cls.item())
             conf = float(det.conf.item())
             box = det.xyxy[0].tolist()
 
-            found.append({
-                "label": label,
-                "confidence": round(conf, 3)
-            })
+            label = labels.get(cls_id, f"Class {cls_id}")
+            found.append({"label": label, "confidence": round(conf, 3)})
 
             if label not in grouped:
                 grouped[label] = []
@@ -71,15 +74,13 @@ async def detect_image(file: UploadFile = File(...)):
         final_conf = 0
         final_box = []
 
-        if grouped:
-            for label, scores in grouped.items():
-                avg = sum(scores) / len(scores)
-                if avg > final_conf:
-                    final_label = label
-                    final_conf = avg
-                    final_box = box_map[label]
+        for label, scores in grouped.items():
+            avg = sum(scores) / len(scores)
+            if avg > final_conf:
+                final_label = label
+                final_conf = avg
+                final_box = box_map[label]
 
-        # Send to Pusher
         pusher_client.trigger(
             'detection-channel',
             'new-detection',
