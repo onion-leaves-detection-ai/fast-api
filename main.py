@@ -31,9 +31,11 @@ model = YOLO(MODEL_PATH)
 # ✅ Manually define label map (replace with your actual class labels)
 labels = {
     0: "Anthracnose Twister",
-    1: "Bacterial Blight",
-    2: "Healthy Leaf",
-    # Add more if your model has more classes
+    1: "Botrytis Leaf Blight",
+    2: "Downy Mildew",
+    3: "Healthy",
+    4: "Purple Blotch",
+    5: "Stemphylium Leaf Blight",
 }
 
 UPLOAD_DIR = "uploads"
