@@ -2,7 +2,7 @@ fastapi
 uvicorn
 python-multipart
 numpy==1.24.4
-torch==2.0.1+cpu
-torchvision==0.15.2+cpu
+torch==2.2.0+cpu
+torchvision==0.17.0+cpu
 ultralytics==8.1.25
 pusher==3.3.3
