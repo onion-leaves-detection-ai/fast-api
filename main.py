@@ -1,13 +1,15 @@
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from ultralytics import YOLO
+import io
 import os
-import shutil
 import pusher
-import uuid
+from PIL import Image
+import numpy as np
 
 app = FastAPI()
 
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,7 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Setup Pusher
+# Pusher setup
 pusher_client = pusher.Pusher(
     app_id='2021947',
     key='e019d7e7760033b03392',
@@ -25,7 +27,7 @@ pusher_client = pusher.Pusher(
     ssl=False
 )
 
-# Load model (TorchScript compatible)
+# Model and labels
 MODEL_PATH = "my_model/my_model.torchscript"
 model = YOLO(MODEL_PATH)
 
@@ -38,67 +40,67 @@ labels = {
     5: "Stemphylium Leaf Blight",
 }
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
 @app.post("/detect")
-async def detect_image(file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
-    # Generate unique filename to avoid collisions
-    filename = f"{uuid.uuid4().hex}_{file.filename}"
-    file_path = os.path.join(UPLOAD_DIR, filename)
-
+async def detect_image(file: UploadFile = File(...)):
     try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        # Read file in memory
+        image_bytes = await file.read()
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        np_image = np.array(image)
 
-        results = model(file_path)
-        detections = results[0].boxes
+        # Perform detection
+        results = model(np_image)
+        detections = results[0].boxes.data.cpu().numpy() if results[0].boxes.data is not None else []
 
         found = []
         grouped = {}
         box_map = {}
 
         for det in detections:
-            if det.cls is None or det.conf is None:
-                continue
+            if len(det) < 6:
+                continue  # Skip invalid detection
 
-            cls_id = int(det.cls.item())
-            conf = float(det.conf.item())
-            box = det.xyxy[0].tolist()
-            label = labels.get(cls_id, f"Class {cls_id}")
+            x1, y1, x2, y2, conf, cls_id = det[:6]
+            label = labels.get(int(cls_id), f"Class {int(cls_id)}")
+            confidence = float(conf)
+            box = [float(x1), float(y1), float(x2), float(y2)]
 
-            found.append({"label": label, "confidence": round(conf, 3)})
-            grouped.setdefault(label, []).append(conf)
-            box_map[label] = box
+            found.append({"label": label, "confidence": round(confidence, 3)})
+
+            if label not in grouped:
+                grouped[label] = []
+                box_map[label] = box
+            grouped[label].append(confidence)
 
         final_label = "No detection"
         final_conf = 0
         final_box = []
 
         for label, scores in grouped.items():
-            avg = sum(scores) / len(scores)
-            if avg > final_conf:
+            avg_conf = sum(scores) / len(scores)
+            if avg_conf > final_conf:
                 final_label = label
-                final_conf = avg
+                final_conf = avg_conf
                 final_box = box_map[label]
 
-        payload = {
+        # Send result to Pusher
+        pusher_client.trigger(
+            'detection-channel',
+            'new-detection',
+            {
+                "filename": file.filename,
+                "results": final_label,
+                "box": final_box,
+                "found": found
+            }
+        )
+
+        return {
             "filename": file.filename,
             "results": final_label,
             "box": final_box,
             "found": found
         }
 
-        # Trigger pusher in background
-        background_tasks.add_task(
-            pusher_client.trigger,
-            'detection-channel',
-            'new-detection',
-            payload
-        )
-
-        return payload
-
-    finally:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+    except Exception as e:
+        return {"error": str(e)}
