@@ -1,8 +1,8 @@
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from ultralytics import YOLO
-import shutil
 import os
+import io
 import pusher
 
 app = FastAPI()
@@ -24,11 +24,11 @@ pusher_client = pusher.Pusher(
     ssl=False
 )
 
-# Load model
+# Load YOLO TorchScript model once
 MODEL_PATH = "my_model/my_model.torchscript"
 model = YOLO(MODEL_PATH)
 
-# ✅ Manually define label map (replace with your actual class labels)
+# Define label map
 labels = {
     0: "Anthracnose Twister",
     1: "Botrytis Leaf Blight",
@@ -38,69 +38,52 @@ labels = {
     5: "Stemphylium Leaf Blight",
 }
 
-UPLOAD_DIR = "uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
 @app.post("/detect")
-async def detect_image(file: UploadFile = File(...)):
-    file_path = os.path.join(UPLOAD_DIR, file.filename)
+async def detect_image(file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
+    image_bytes = await file.read()
+    results = model(io.BytesIO(image_bytes))
+    detections = results[0].boxes
 
-    try:
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+    found = []
+    grouped = {}
+    box_map = {}
 
-        results = model(file_path)
-        detections = results[0].boxes
+    for det in detections:
+        if det.cls is None or det.conf is None:
+            continue
 
-        found = []
-        grouped = {}
-        box_map = {}
+        cls_id = int(det.cls.item())
+        conf = float(det.conf.item())
+        box = det.xyxy[0].tolist()
+        label = labels.get(cls_id, f"Class {cls_id}")
 
-        for det in detections:
-            if det.cls is None or det.conf is None:
-                continue  # skip if incomplete
+        found.append({"label": label, "confidence": round(conf, 3)})
+        grouped.setdefault(label, []).append(conf)
+        box_map[label] = box
 
-            cls_id = int(det.cls.item())
-            conf = float(det.conf.item())
-            box = det.xyxy[0].tolist()
+    final_label = "No detection"
+    final_conf = 0
+    final_box = []
 
-            label = labels.get(cls_id, f"Class {cls_id}")
-            found.append({"label": label, "confidence": round(conf, 3)})
+    for label, scores in grouped.items():
+        avg = sum(scores) / len(scores)
+        if avg > final_conf:
+            final_label = label
+            final_conf = avg
+            final_box = box_map[label]
 
-            if label not in grouped:
-                grouped[label] = []
-                box_map[label] = box
-            grouped[label].append(conf)
+    response_payload = {
+        "filename": file.filename,
+        "results": final_label,
+        "box": final_box,
+        "found": found
+    }
 
-        final_label = "No detection"
-        final_conf = 0
-        final_box = []
+    background_tasks.add_task(
+        pusher_client.trigger,
+        'detection-channel',
+        'new-detection',
+        response_payload
+    )
 
-        for label, scores in grouped.items():
-            avg = sum(scores) / len(scores)
-            if avg > final_conf:
-                final_label = label
-                final_conf = avg
-                final_box = box_map[label]
-
-        pusher_client.trigger(
-            'detection-channel',
-            'new-detection',
-            {
-                "filename": file.filename,
-                "results": final_label,
-                "box": final_box,
-                "found": found
-            }
-        )
-
-        return {
-            "filename": file.filename,
-            "results": final_label,
-            "box": final_box,
-            "found": found
-        }
-
-    finally:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+    return response_payload
