@@ -1,11 +1,11 @@
-# Use official Python base (Python 3.11 is supported by Render)
+# Use official Python base
 FROM python:3.11-slim
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Create working directory
+# Set workdir
 WORKDIR /app
 
 # Install system dependencies
@@ -15,19 +15,20 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxext6 \
     libxrender-dev \
+    libgl1 \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Install pip requirements
+# Install Python dependencies
 COPY requirements.txt .
 RUN pip install --upgrade pip \
  && pip install --no-cache-dir -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
 
-# Copy project files
+# Copy app files
 COPY . .
 
-# Expose port (for Uvicorn)
+# Expose port
 EXPOSE 10000
 
-# Start FastAPI app
+# Run app
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10000"]

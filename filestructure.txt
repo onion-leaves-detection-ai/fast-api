@@ -37,7 +37,6 @@
 |-- runtime.txt
 |-- source
 |-- uploads
-|-- venv.bat
 |-- __pycache__
     |-- custom_blocks.cpython-310.pyc
     |-- main.cpython-310.pyc
